@@ -7,12 +7,28 @@
 <body>
 
   <h2>VietNam Provinces 2025-07</h2>
-  <input id="search" type="text" placeholder="Search..." onchange="loadExcel()">
+  <input id="search" type="text" placeholder="Search..." onchange="filter()">
   <pre id="output"></pre>
+
+  <table id="provinceTable" border="1">
+    <tbody></tbody>
+  </table>
 
   <!-- SheetJS -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script>
+    const cacheKey = "vietnam-provinces-2025-07";
+
+    function saveToLocalStorage(model) {
+      localStorage.setItem(cacheKey, JSON.stringify(model));
+      console.log("Data saved to localStorage with key:", cacheKey);
+    }
+
+    function loadFromLocalStorage() {
+      const raw = localStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : [];
+    }
+
     async function loadExcel() {
       const response = await fetch("VietNam-Province-202507.xlsx"); // file must be served by web server
       const arrayBuffer = await response.arrayBuffer();
@@ -27,16 +43,22 @@
 
       // Map the rest of rows into objects
       let data = rows.slice(1).map(r => {
-        let obj = {};
-        headers.forEach((h, i) => {
-          obj[h] = r[i];
-        });
-
+        
         const old0 = r[0];
         const old1 = r[1];
         const old2 = r[2];
         const new0 = r[3];
         const new1 = r[4];
+
+        if (old1 == null || old2 == null)
+        {
+          return null; // Skip rows with missing Old_1 or Old_2
+        }
+
+        let obj = {};
+        headers.forEach((h, i) => {
+          obj[h] = r[i];
+        });
 
         let code = removePrefix(new0);
         code = removeVietnameseTones1(code);
@@ -48,17 +70,9 @@
         return obj;
       });
 
-      let search = document.getElementById("search").value.trim();
-      if (search)
-      {
-        search = removeVietnameseTones1(search).toLowerCase();
-        data = data.filter(item => item.Keywords.includes(search));
-      }
+      data = data.filter(x => x !== null); // Remove null entries
 
-      const grouped = groupWithOldObjects(data);
-
-      document.getElementById("output").textContent = JSON.stringify(grouped, null, 2);
-
+      saveToLocalStorage(data);
     }
 
     function removePrefix(str) {
@@ -135,32 +149,84 @@
       return keywords.toLowerCase();
     }
 
-    function groupWithOldObjects(data) {
+    function transformData(data) {
       const result = [];
 
       data.forEach(item => {
-        // Find or create New_0 + New_1 group
-        let group = result.find(
-          r => r.New_0 === item.New_0 && r.New_1 === item.New_1
+        // find/create New_0 + New_1 group
+        let newGroup = result.find(
+          g => g.New_0 === item.New_0 && g.New_1 === item.New_1
         );
 
-        if (!group) {
-          group = { New_0: item.New_0, New_1: item.New_1, Old: [] };
-          result.push(group);
+        if (!newGroup) {
+          newGroup = { New_0: item.New_0, New_1: item.New_1, OldGroups: [] };
+          result.push(newGroup);
         }
 
-        // Build Old object with only Old_* props
-        const oldObj = {};
-        Object.keys(item).forEach(k => {
-          if (k.startsWith("Old_")) {
-            oldObj[k] = item[k];
-          }
-        });
+        // find/create Old_0 + Old_1 group inside NewGroup
+        let oldGroup = newGroup.OldGroups.find(
+          g => g.Old_0 === item.Old_0 && g.Old_1 === item.Old_1
+        );
 
-        group.Old.push(oldObj);
+        if (!oldGroup) {
+          oldGroup = { Old_0: item.Old_0, Old_1: item.Old_1, Old_2_List: [] };
+          newGroup.OldGroups.push(oldGroup);
+        }
+
+        // add Old_2 if valid and not duplicate
+        if (item.Old_2 && !oldGroup.Old_2_List.includes(item.Old_2)) {
+          oldGroup.Old_2_List.push(item.Old_2);
+        }
       });
 
       return result;
+    }
+
+    function filter() {
+      let data = loadFromLocalStorage();
+      
+      let search = document.getElementById("search").value.trim();
+      if (search)
+      {
+        search = removeVietnameseTones1(search).toLowerCase();
+        data = data.filter(item => item.Keywords.includes(search));
+      }
+
+      const grouped = transformData(data);
+
+      //document.getElementById("output").textContent = JSON.stringify(grouped, null, 2);
+
+      renderTable(grouped);
+    }
+
+    function renderTable(groupedData) {
+      const tbody = document.querySelector("#provinceTable tbody");
+      tbody.innerHTML = ""; // clear old rows
+
+      groupedData.forEach(newGroup => {
+        // Build Old mapping text
+        const oldMappings = newGroup.OldGroups.map(oldGroup => {
+          return `${oldGroup.Old_0}, ${oldGroup.Old_1}: ${oldGroup.Old_2_List.join(", ")}`;
+        }).join("<br/><br/>");
+
+        // Create row
+        const tr = document.createElement("tr");
+
+        const tdNew0 = document.createElement("td");
+        tdNew0.textContent = newGroup.New_0;
+
+        const tdNew1 = document.createElement("td");
+        tdNew1.textContent = newGroup.New_1;
+
+        const tdOlds = document.createElement("td");
+        tdOlds.innerHTML = oldMappings; // allow line breaks
+
+        tr.appendChild(tdNew0);
+        tr.appendChild(tdNew1);
+        tr.appendChild(tdOlds);
+
+        tbody.appendChild(tr);
+      });
     }
 
     loadExcel();
