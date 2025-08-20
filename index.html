@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Read Excel in HTML</title>
+</head>
+<body>
+
+  <h2>VietNam Provinces 2025-07</h2>
+  <input id="search" type="text" placeholder="Search..." oninput="loadExcel()">
+  <pre id="output"></pre>
+
+  <!-- SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script>
+    async function loadExcel() {
+      const response = await fetch("VietNam-Province-202507.xlsx"); // file must be served by web server
+      const arrayBuffer = await response.arrayBuffer();
+
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // First row = headers
+      const headers = rows[0];
+
+      // Map the rest of rows into objects
+      let data = rows.slice(1).map(r => {
+        let obj = {};
+        headers.forEach((h, i) => {
+          obj[h] = r[i];
+        });
+
+        const old0 = r[0];
+        const old1 = r[1];
+        const old2 = r[2];
+        const new0 = r[3];
+        const new1 = r[4];
+
+        let code = removePrefix(new0);
+        code = removeVietnameseTones1(code);
+        obj.Code = removeSpaces(code);
+
+        let keywords = buildKeywords([old0, old1, old2, new0, new1]);
+        obj.Keywords = keywords;
+
+        return obj;
+      });
+
+      let search = document.getElementById("search").value.trim();
+      if (search)
+      {
+        search = removeVietnameseTones1(search).toLowerCase();
+        data = data.filter(item => item.Keywords.includes(search));
+      }
+
+      const grouped = groupWithOldObjects(data);
+
+      document.getElementById("output").textContent = JSON.stringify(grouped, null, 2);
+
+    }
+
+    function removePrefix(str) {
+      if (!str) return str;
+
+      const types = ["Tỉnh", "TP.", "Q.", "H.", "P.", "TT.", "X."];
+      types.forEach(type => {
+        str = str.replace(type, "");
+      });
+
+      return str;
+    }
+
+    function removeVietnameseTones(str) {
+      if (!str) return str;
+      
+      str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
+      str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
+      str = str.replace(/ì|í|ị|ỉ|ĩ/g,"i"); 
+      str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g,"o"); 
+      str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g,"u"); 
+      str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g,"y"); 
+      str = str.replace(/đ/g,"d");
+      str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+      str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+      str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+      str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+      str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+      str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+      str = str.replace(/Đ/g, "D");
+      // Some system encode vietnamese combining accent as individual utf-8 characters
+      // Một vài bộ encode coi các dấu mũ, dấu chữ như một kí tự riêng biệt nên thêm hai dòng này
+      str = str.replace(/\u0300|\u0301|\u0303|\u0309|\u0323/g, ""); // ̀ ́ ̃ ̉ ̣  huyền, sắc, ngã, hỏi, nặng
+      str = str.replace(/\u02C6|\u0306|\u031B/g, ""); // ˆ ̆ ̛  Â, Ê, Ă, Ơ, Ư
+      // Remove extra spaces
+      // Bỏ các khoảng trắng liền nhau
+      str = str.replace(/ + /g," ");
+      str = str.trim();
+      // Remove punctuations
+      // Bỏ dấu câu, kí tự đặc biệt
+      str = str.replace(/!|@|%|\^|\*|\(|\)|\+|\=|\<|\>|\?|\/|,|\.|\:|\;|\'|\"|\&|\#|\[|\]|~|\$|_|`|-|{|}|\||\\/g," ");
+      return str;
+    }
+
+    function removeVietnameseTones1(str) {
+      if (str == null) return "";
+      return str
+        .toString()
+        .normalize("NFD")                 // split base + diacritics
+        .replace(/[\u0300-\u036f]/g, "") // remove diacritics
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D");
+    }
+
+    function removeSpaces(str) {
+      if (!str) return str;
+      return str.replace(/\s+/g, "").trim();
+    }
+
+    function buildCode(value) {
+      let code = value.replace(/ /g, "");
+      code = removePrefix(code);
+      //code = removeVietnameseTones(code);
+      return code;
+    }
+
+    function buildKeywords(words) {
+      let keywords = "";
+
+      let uniq = new Set(words.map(w => removeVietnameseTones(removePrefix(w))).filter(x => x !== "" && x !== null));
+
+      keywords = Array.from(uniq).join(";"); // normalize to lowercase
+
+      return keywords.toLowerCase();
+    }
+
+    function groupWithOldObjects(data) {
+      const result = [];
+
+      data.forEach(item => {
+        // Find or create New_0 + New_1 group
+        let group = result.find(
+          r => r.New_0 === item.New_0 && r.New_1 === item.New_1
+        );
+
+        if (!group) {
+          group = { New_0: item.New_0, New_1: item.New_1, Old: [] };
+          result.push(group);
+        }
+
+        // Build Old object with only Old_* props
+        const oldObj = {};
+        Object.keys(item).forEach(k => {
+          if (k.startsWith("Old_")) {
+            oldObj[k] = item[k];
+          }
+        });
+
+        group.Old.push(oldObj);
+      });
+
+      return result;
+    }
+
+    loadExcel();
+  </script>
+</body>
+</html>
