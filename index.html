@@ -157,25 +157,28 @@
         let newGroup = result.find(
           g => g.New_0 === item.New_0 && g.New_1 === item.New_1
         );
-
         if (!newGroup) {
           newGroup = { New_0: item.New_0, New_1: item.New_1, OldGroups: [] };
           result.push(newGroup);
         }
 
-        // find/create Old_0 + Old_1 group inside NewGroup
-        let oldGroup = newGroup.OldGroups.find(
-          g => g.Old_0 === item.Old_0 && g.Old_1 === item.Old_1
-        );
+        // find/create Old_0 group
+        let old0Group = newGroup.OldGroups.find(g => g.Old_0 === item.Old_0);
+        if (!old0Group) {
+          old0Group = { Old_0: item.Old_0, Old_1_Groups: [] };
+          newGroup.OldGroups.push(old0Group);
+        }
 
-        if (!oldGroup) {
-          oldGroup = { Old_0: item.Old_0, Old_1: item.Old_1, Old_2_List: [] };
-          newGroup.OldGroups.push(oldGroup);
+        // find/create Old_1 group inside Old_0
+        let old1Group = old0Group.Old_1_Groups.find(g => g.Old_1 === item.Old_1);
+        if (!old1Group) {
+          old1Group = { Old_1: item.Old_1, Old_2_List: [] };
+          old0Group.Old_1_Groups.push(old1Group);
         }
 
         // add Old_2 if valid and not duplicate
-        if (item.Old_2 && !oldGroup.Old_2_List.includes(item.Old_2)) {
-          oldGroup.Old_2_List.push(item.Old_2);
+        if (item.Old_2 && !old1Group.Old_2_List.includes(item.Old_2)) {
+          old1Group.Old_2_List.push(item.Old_2);
         }
       });
 
@@ -201,15 +204,19 @@
 
     function renderTable(groupedData) {
       const tbody = document.querySelector("#provinceTable tbody");
-      tbody.innerHTML = ""; // clear old rows
+      tbody.innerHTML = "";
 
       groupedData.forEach(newGroup => {
         // Build Old mapping text
-        const oldMappings = newGroup.OldGroups.map(oldGroup => {
-          return `${oldGroup.Old_0}, ${oldGroup.Old_1}: ${oldGroup.Old_2_List.join(", ")}`;
-        }).join("<br/><br/>");
+        const oldMappings = newGroup.OldGroups.map(old0 => {
+          return `
+            <b>${old0.Old_0}</b><br/>
+            ${old0.Old_1_Groups.map(
+              old1 => `${old1.Old_1}: ${old1.Old_2_List.join(", ")}`
+            ).join("<br/>")}
+          `;
+        }).join("<hr/>");
 
-        // Create row
         const tr = document.createElement("tr");
 
         const tdNew0 = document.createElement("td");
@@ -219,7 +226,7 @@
         tdNew1.textContent = newGroup.New_1;
 
         const tdOlds = document.createElement("td");
-        tdOlds.innerHTML = oldMappings; // allow line breaks
+        tdOlds.innerHTML = oldMappings;
 
         tr.appendChild(tdNew0);
         tr.appendChild(tdNew1);
